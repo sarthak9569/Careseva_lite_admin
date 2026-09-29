@@ -1,7 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/clinic.dart';
@@ -22,7 +21,7 @@ class AdminStore extends ChangeNotifier {
 
   bool _isLoggedIn = false;
   String _adminUser = 'Admin User';
-  bool _isLiveFirestore = false;
+  Timer? _pollingTimer;
 
   List<ClinicApplication> get applications => _applications;
   List<Clinic> get clinics => _clinics;
@@ -30,7 +29,6 @@ class AdminStore extends ChangeNotifier {
   List<Map<String, dynamic>> get auditLogs => _auditLogs;
   bool get isLoggedIn => _isLoggedIn;
   String get adminUser => _adminUser;
-  bool get isLiveFirestore => _isLiveFirestore;
 
   List<ClinicApplication> get pendingApplications =>
       _applications.where((a) => a.status == ApplicationStatus.pending).toList();
@@ -42,103 +40,48 @@ class AdminStore extends ChangeNotifier {
       _applications.where((a) => a.status == ApplicationStatus.rejected).toList();
 
   Future<void> refreshData() async {
-    await _initFirestoreAndLoadData();
+    await _fetchRemoteData();
   }
 
   AdminStore() {
-    _initFirestoreAndLoadData();
+    _initAndLoadData();
   }
 
-  Future<void> _initFirestoreAndLoadData() async {
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initAndLoadData() async {
     await _loadLocalData();
+    await _fetchRemoteData();
 
+    // Setup periodic polling every 3 seconds for real-time application updates from Railway MongoDB
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _fetchRemoteData();
+    });
+  }
+
+  Future<void> _fetchRemoteData() async {
     try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
-      }
-
-      final firestore = FirebaseFirestore.instance;
-      debugPrint('[AdminStore Live] Connected to Firestore project: ${firestore.app.options.projectId}');
-
-      // Fetch applications from Railway backend API
-      try {
-        final apiApps = await ApiService.getApplications();
-        if (apiApps.isNotEmpty) {
-          for (var rawApp in apiApps) {
-            final parsed = ClinicApplication.fromJson(Map<String, dynamic>.from(rawApp));
-            final idx = _applications.indexWhere((a) => a.id == parsed.id);
-            if (idx != -1) {
-              _applications[idx] = parsed;
-            } else {
-              _applications.add(parsed);
-            }
+      final apiApps = await ApiService.getApplications();
+      if (apiApps.isNotEmpty) {
+        for (var rawApp in apiApps) {
+          final parsed = ClinicApplication.fromJson(Map<String, dynamic>.from(rawApp));
+          final idx = _applications.indexWhere((a) => a.id == parsed.id);
+          if (idx != -1) {
+            _applications[idx] = parsed;
+          } else {
+            _applications.add(parsed);
           }
-          _applications.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
-          notifyListeners();
         }
-      } catch (e) {
-        debugPrint('[AdminStore] Backend API fetch error: $e');
-      }
-
-      // 1. Listen to Applications collection
-      firestore.collection('clinicApplications').snapshots().listen((snapshot) {
-        _isLiveFirestore = true;
-        _applications = snapshot.docs.map((doc) {
-          final data = Map<String, dynamic>.from(doc.data());
-          data['id'] = doc.id;
-          return ClinicApplication.fromJson(data);
-        }).toList()
-          ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
-        _saveData();
+        _applications.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+        await _saveData();
         notifyListeners();
-      }, onError: (e) {
-        debugPrint('[AdminStore Firestore Error] Applications stream: $e');
-      });
-
-      // 2. Listen to Clinics collection
-      firestore.collection('clinics').snapshots().listen((snapshot) {
-        if (snapshot.docs.isNotEmpty) {
-          _isLiveFirestore = true;
-          _clinics = snapshot.docs.map((doc) {
-            final data = Map<String, dynamic>.from(doc.data());
-            data['clinicId'] = doc.id;
-            return Clinic.fromJson(data);
-          }).toList();
-          _saveData();
-          notifyListeners();
-        }
-      }, onError: (e) {
-        debugPrint('[AdminStore] Firestore Clinics Error: $e');
-      });
-
-      // 3. Listen to Doctors collection
-      firestore.collection('doctors').snapshots().listen((snapshot) {
-        if (snapshot.docs.isNotEmpty) {
-          _isLiveFirestore = true;
-          _doctors = snapshot.docs.map((doc) {
-            final data = Map<String, dynamic>.from(doc.data());
-            data['doctorId'] = doc.id;
-            return Doctor.fromJson(data);
-          }).toList();
-          _saveData();
-          notifyListeners();
-        }
-      }, onError: (e) {
-        debugPrint('[AdminStore] Firestore Doctors Error: $e');
-      });
-
-      // 4. Listen to Audit Logs collection
-      firestore.collection('auditLogs').snapshots().listen((snapshot) {
-        if (snapshot.docs.isNotEmpty) {
-          _auditLogs = snapshot.docs.map((doc) => doc.data()).toList()
-            ..sort((a, b) => (b['timestamp'] ?? '').compareTo(a['timestamp'] ?? ''));
-          notifyListeners();
-        }
-      }, onError: (e) {
-        debugPrint('[AdminStore] Firestore Audit Logs Error: $e');
-      });
+      }
     } catch (e) {
-      debugPrint('[AdminStore] Operating in local mode: $e');
+      debugPrint('[AdminStore] Railway Backend Fetch Error: $e');
     }
   }
 
@@ -257,7 +200,7 @@ class AdminStore extends ChangeNotifier {
     if (username.isNotEmpty && password == 'admin123') {
       _isLoggedIn = true;
       _adminUser = username;
-      _logAudit('ADMIN_LOGIN', 'Admin $username logged into CareSeva 2 Admin Portal.');
+      _logAudit('ADMIN_LOGIN', 'Admin $username logged into CareSeva SuperAdmin Command Center.');
       notifyListeners();
       return true;
     }
@@ -282,7 +225,7 @@ class AdminStore extends ChangeNotifier {
     return newId;
   }
 
-  /// Approve Clinic Application
+  /// Approve Clinic Application via Railway FastAPI MongoDB Backend
   Future<String> approveApplication(String appId) async {
     final index = _applications.indexWhere((a) => a.id == appId);
     if (index == -1) throw Exception('Application not found');
@@ -327,21 +270,11 @@ class AdminStore extends ChangeNotifier {
     _clinics.insert(0, newClinic);
     _doctors.insert(0, newDoctor);
 
-    // Call Railway FastAPI backend API
+    // Direct HTTP POST to Railway FastAPI MongoDB Backend
     try {
       await ApiService.approveApplication(appId);
     } catch (e) {
-      debugPrint('[AdminStore] ApiService Approve Notice: $e');
-    }
-
-    // Sync to Firestore Live Collections
-    try {
-      final firestore = FirebaseFirestore.instance;
-      await firestore.collection('clinicApplications').doc(app.id).set(app.toJson(), SetOptions(merge: true));
-      await firestore.collection('clinics').doc(generatedClinicId).set(newClinic.toJson());
-      await firestore.collection('doctors').doc(newDoctor.doctorId).set(newDoctor.toJson());
-    } catch (e) {
-      debugPrint('[AdminStore] Firestore Sync Notice: $e');
+      debugPrint('[AdminStore] ApiService Approve Error: $e');
     }
 
     _logAudit('CLINIC_APPROVED', 'Approved ${app.clinicName}. Generated Clinic ID: $generatedClinicId.');
@@ -350,7 +283,7 @@ class AdminStore extends ChangeNotifier {
     return generatedClinicId;
   }
 
-  /// Reject Application
+  /// Reject Application via Railway FastAPI MongoDB Backend
   Future<void> rejectApplication(String appId, String reason) async {
     final index = _applications.indexWhere((a) => a.id == appId);
     if (index == -1) return;
@@ -360,20 +293,11 @@ class AdminStore extends ChangeNotifier {
     app.reviewedAt = DateTime.now();
     app.rejectionReason = reason;
 
-    // Call Railway FastAPI backend API
+    // Direct HTTP POST to Railway FastAPI MongoDB Backend
     try {
       await ApiService.rejectApplication(appId, reason);
     } catch (e) {
-      debugPrint('[AdminStore] ApiService Reject Notice: $e');
-    }
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('clinicApplications')
-          .doc(app.id)
-          .set(app.toJson(), SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('[AdminStore] Firestore Reject Error: $e');
+      debugPrint('[AdminStore] ApiService Reject Error: $e');
     }
 
     _logAudit('CLINIC_REJECTED', 'Rejected application for ${app.clinicName}. Reason: $reason');
@@ -395,15 +319,6 @@ class AdminStore extends ChangeNotifier {
       _logAudit('CLINIC_REACTIVATED', 'Clinic ${clinic.name} ($clinicId) has been REACTIVATED.');
     }
 
-    try {
-      await FirebaseFirestore.instance
-          .collection('clinics')
-          .doc(clinicId)
-          .update({'status': clinic.status.name});
-    } catch (e) {
-      debugPrint('[AdminStore] Firestore Toggle Error: $e');
-    }
-
     await _saveData();
     notifyListeners();
   }
@@ -411,11 +326,6 @@ class AdminStore extends ChangeNotifier {
   /// Add Doctor to a Clinic
   Future<void> addDoctorToClinic(Doctor doctor) async {
     _doctors.add(doctor);
-    try {
-      await FirebaseFirestore.instance.collection('doctors').doc(doctor.doctorId).set(doctor.toJson());
-    } catch (e) {
-      debugPrint('[AdminStore] Firestore Add Doctor Error: $e');
-    }
     _logAudit('DOCTOR_ADDED', 'Added Doctor ${doctor.name} to Clinic ${doctor.clinicId}');
     await _saveData();
     notifyListeners();
@@ -430,8 +340,5 @@ class AdminStore extends ChangeNotifier {
       'timestamp': DateTime.now().toIso8601String(),
     };
     _auditLogs.insert(0, logData);
-    try {
-      FirebaseFirestore.instance.collection('auditLogs').doc(logData['id'] as String).set(logData);
-    } catch (_) {}
   }
 }

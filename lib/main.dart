@@ -1,8 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/admin_login_screen.dart';
 import 'services/admin_store.dart';
@@ -21,15 +19,6 @@ void main() async {
     debugPrint('[CareSeva Admin Platform Error] $error\n$stack');
     return true;
   };
-
-  // Graceful Firebase Initialization
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (e) {
-    debugPrint('[CareSeva Admin] Firebase initialization notice: $e (Operating in hybrid/demo mode)');
-  }
 
   // Custom UI Error Widget fallback
   ErrorWidget.builder = (FlutterErrorDetails details) {

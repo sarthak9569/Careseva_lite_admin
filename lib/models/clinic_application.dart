@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 enum ApplicationStatus { pending, approved, rejected }
 
 class ClinicApplication {
@@ -88,7 +86,6 @@ class ClinicApplication {
     DateTime parseDate(dynamic val) {
       if (val == null) return DateTime.now();
       if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
-      if (val is Timestamp) return val.toDate();
       return DateTime.now();
     }
 
