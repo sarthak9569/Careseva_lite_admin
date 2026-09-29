@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/clinic_application.dart';
 import '../services/admin_store.dart';
+import '../services/pdf_export_service.dart';
 import '../theme/admin_theme.dart';
 import 'application_detail_screen.dart';
 
@@ -658,6 +659,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     style: const TextStyle(fontSize: 12, color: AdminTheme.textMuted),
                   ),
                   const Spacer(),
+                  IconButton(
+                    tooltip: 'Download PDF Application',
+                    icon: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFF38BDF8), size: 20),
+                    onPressed: () => PdfExportService.downloadOrPrintApplication(context, app),
+                  ),
+                  const SizedBox(width: 6),
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white70,
