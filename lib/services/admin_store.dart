@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/clinic.dart';
 import '../models/clinic_application.dart';
 import '../models/doctor.dart';
+import 'api_service.dart';
 
 class AdminStore extends ChangeNotifier {
   static const String _kApplicationsKey = 'cs_clinic_applications';
@@ -48,6 +49,26 @@ class AdminStore extends ChangeNotifier {
 
       final firestore = FirebaseFirestore.instance;
       debugPrint('[AdminStore Live] Connected to Firestore project: ${firestore.app.options.projectId}');
+
+      // Fetch applications from Railway backend API
+      try {
+        final apiApps = await ApiService.getApplications();
+        if (apiApps.isNotEmpty) {
+          for (var rawApp in apiApps) {
+            final parsed = ClinicApplication.fromJson(Map<String, dynamic>.from(rawApp));
+            final idx = _applications.indexWhere((a) => a.id == parsed.id);
+            if (idx != -1) {
+              _applications[idx] = parsed;
+            } else {
+              _applications.add(parsed);
+            }
+          }
+          _applications.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('[AdminStore] Backend API fetch error: $e');
+      }
 
       // 1. Listen to Applications collection
       firestore.collection('clinicApplications').snapshots().listen((snapshot) {
@@ -172,6 +193,7 @@ class AdminStore extends ChangeNotifier {
     const demoClinicId = 'CS-7K82P';
     final demoClinic = Clinic(
       clinicId: demoClinicId,
+      clinicRefNum: 'REF-78291',
       name: 'LifeCare Health Clinic',
       phone: '+91 99000 11223',
       email: 'care@lifecare.com',
@@ -184,8 +206,6 @@ class AdminStore extends ChangeNotifier {
       speciality: 'General Medicine & Cardiology',
       operatingHours: '08:00 AM - 09:00 PM',
       status: ClinicStatus.approved,
-      createdAt: DateTime.now().subtract(const Duration(days: 10)),
-      approvedAt: DateTime.now().subtract(const Duration(days: 9)),
     );
     _clinics = [demoClinic];
 
@@ -259,6 +279,7 @@ class AdminStore extends ChangeNotifier {
 
     final app = _applications[index];
     final generatedClinicId = _generateUniqueClinicId();
+    final generatedRefNum = 'REF-${generatedClinicId.replaceAll('CS-', '')}';
 
     app.status = ApplicationStatus.approved;
     app.reviewedAt = DateTime.now();
@@ -266,6 +287,7 @@ class AdminStore extends ChangeNotifier {
 
     final newClinic = Clinic(
       clinicId: generatedClinicId,
+      clinicRefNum: generatedRefNum,
       name: app.clinicName,
       phone: app.clinicPhone,
       email: app.email,
@@ -278,8 +300,6 @@ class AdminStore extends ChangeNotifier {
       speciality: app.speciality,
       operatingHours: app.operatingHours,
       status: ClinicStatus.approved,
-      createdAt: app.submittedAt,
-      approvedAt: DateTime.now(),
     );
 
     final newDoctor = Doctor(
@@ -296,6 +316,13 @@ class AdminStore extends ChangeNotifier {
 
     _clinics.insert(0, newClinic);
     _doctors.insert(0, newDoctor);
+
+    // Call Railway FastAPI backend API
+    try {
+      await ApiService.approveApplication(appId);
+    } catch (e) {
+      debugPrint('[AdminStore] ApiService Approve Notice: $e');
+    }
 
     // Sync to Firestore Live Collections
     try {
@@ -322,6 +349,13 @@ class AdminStore extends ChangeNotifier {
     app.status = ApplicationStatus.rejected;
     app.reviewedAt = DateTime.now();
     app.rejectionReason = reason;
+
+    // Call Railway FastAPI backend API
+    try {
+      await ApiService.rejectApplication(appId, reason);
+    } catch (e) {
+      debugPrint('[AdminStore] ApiService Reject Notice: $e');
+    }
 
     try {
       await FirebaseFirestore.instance

@@ -14,7 +14,7 @@ class Clinic {
   final double longitude;
   final String speciality;
   final String operatingHours;
-  final ClinicStatus status;
+  ClinicStatus status;
   bool isBookingActive;
   bool isOpdActive;
 
