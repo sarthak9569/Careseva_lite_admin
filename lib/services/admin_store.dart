@@ -35,6 +35,16 @@ class AdminStore extends ChangeNotifier {
   List<ClinicApplication> get pendingApplications =>
       _applications.where((a) => a.status == ApplicationStatus.pending).toList();
 
+  List<ClinicApplication> get approvedApplications =>
+      _applications.where((a) => a.status == ApplicationStatus.approved).toList();
+
+  List<ClinicApplication> get rejectedApplications =>
+      _applications.where((a) => a.status == ApplicationStatus.rejected).toList();
+
+  Future<void> refreshData() async {
+    await _initFirestoreAndLoadData();
+  }
+
   AdminStore() {
     _initFirestoreAndLoadData();
   }

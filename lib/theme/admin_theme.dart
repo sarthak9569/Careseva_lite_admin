@@ -2,48 +2,73 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AdminTheme {
-  static const primaryColor = Color(0xFF0F766E); // Teal 700
-  static const primaryDark = Color(0xFF0D9488);
-  static const accentColor = Color(0xFF0284C7); // Sky 600
-  static const backgroundColor = Color(0xFFF8FAFC);
-  static const cardColor = Colors.white;
-  static const textPrimary = Color(0xFF0F172A);
-  static const textSecondary = Color(0xFF64748B);
+  // Dark Command Center Theme Palette
+  static const scaffoldBg = Color(0xFF0B0F19);
+  static const cardBg = Color(0xFF131825);
+  static const cardBorder = Color(0xFF1E2638);
+  static const headerBg = Color(0xFF0B0F19);
+  
+  static const primaryColor = Color(0xFF0D9488); // Teal
+  static const accentColor = Color(0xFF0EA5E9); // Cyan / Sky
+  
+  // Status & Metric Accent Colors
+  static const pendingGold = Color(0xFFF59E0B);
+  static const approvedGreen = Color(0xFF10B981);
+  static const cyanBeds = Color(0xFF06B6D4);
+  static const accreditedPurple = Color(0xFF8B5CF6);
+  static const rejectedRed = Color(0xFFEF4444);
 
-  static ThemeData lightTheme = ThemeData(
+  static const textPrimary = Colors.white;
+  static const textSecondary = Color(0xFF94A3B8);
+  static const textMuted = Color(0xFF64748B);
+
+  static ThemeData darkTheme = ThemeData(
     useMaterial3: true,
-    scaffoldBackgroundColor: backgroundColor,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: primaryColor,
+    brightness: Brightness.dark,
+    scaffoldBackgroundColor: scaffoldBg,
+    colorScheme: const ColorScheme.dark(
       primary: primaryColor,
       secondary: accentColor,
-      surface: cardColor,
+      surface: cardBg,
     ),
-    textTheme: GoogleFonts.interTextTheme(),
-    appBarTheme: AppBarTheme(
-      backgroundColor: primaryColor,
-      foregroundColor: Colors.white,
+    textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).copyWith(
+      titleLarge: GoogleFonts.outfit(color: textPrimary, fontWeight: FontWeight.bold),
+      titleMedium: GoogleFonts.outfit(color: textPrimary, fontWeight: FontWeight.w600),
+      bodyLarge: GoogleFonts.inter(color: textPrimary),
+      bodyMedium: GoogleFonts.inter(color: textSecondary),
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: headerBg,
+      foregroundColor: textPrimary,
       elevation: 0,
       centerTitle: false,
-      titleTextStyle: GoogleFonts.outfit(
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        color: Colors.white,
-      ),
     ),
     cardTheme: CardThemeData(
-      color: cardColor,
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: cardBg,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: cardBorder, width: 1),
+      ),
     ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: const Color(0xFF161C2C),
+      hintStyle: const TextStyle(color: textMuted, fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: cardBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: cardBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: primaryColor),
       ),
     ),
   );
 }
+

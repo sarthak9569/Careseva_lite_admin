@@ -73,9 +73,9 @@ class CareSevaAdminApp extends StatelessWidget {
       child: Consumer<AdminStore>(
         builder: (context, adminStore, child) {
           return MaterialApp(
-            title: 'CareSeva 2 Admin Portal',
+            title: 'CareSeva SuperAdmin Command Center',
             debugShowCheckedModeBanner: false,
-            theme: AdminTheme.lightTheme,
+            theme: AdminTheme.darkTheme,
             home: adminStore.isLoggedIn ? const AdminDashboardScreen() : const AdminLoginScreen(),
           );
         },
