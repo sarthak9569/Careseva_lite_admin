@@ -57,8 +57,8 @@ class AdminStore extends ChangeNotifier {
     await _loadLocalData();
     await _fetchRemoteData();
 
-    // Setup periodic polling every 3 seconds for real-time application updates from Railway MongoDB
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Setup periodic polling every 2 seconds for real-time application updates from Railway MongoDB
+    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       _fetchRemoteData();
     });
   }

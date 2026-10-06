@@ -659,12 +659,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     style: const TextStyle(fontSize: 12, color: AdminTheme.textMuted),
                   ),
                   const Spacer(),
-                  IconButton(
-                    tooltip: 'Download PDF Application',
-                    icon: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFF38BDF8), size: 20),
+                  // Prominent Download Application (PDF) Button
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                      foregroundColor: const Color(0xFF38BDF8),
+                      side: const BorderSide(color: Color(0xFF0284C7), width: 1.2),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 16, color: Color(0xFF38BDF8)),
+                    label: const Text(
+                      'Download Application',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
                     onPressed: () => PdfExportService.downloadOrPrintApplication(context, app),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white70,
@@ -682,7 +693,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     child: const Text('View Full Details', style: TextStyle(fontSize: 12)),
                   ),
                   if (app.status == ApplicationStatus.pending) ...[
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     OutlinedButton(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AdminTheme.rejectedRed,
@@ -692,7 +703,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       onPressed: () => _rejectApplicationQuick(context, adminStore, app),
                       child: const Text('Reject', style: TextStyle(fontSize: 12)),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0F766E),
