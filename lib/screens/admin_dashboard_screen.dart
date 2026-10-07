@@ -197,7 +197,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Dashboard synchronized in real-time with Railway & Firestore'),
+                  content: Text('Dashboard synchronized in real-time with Railway & MongoDB'),
                   duration: Duration(seconds: 2),
                 ),
               );
