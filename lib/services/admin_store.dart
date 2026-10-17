@@ -47,6 +47,9 @@ class AdminStore extends ChangeNotifier {
     _initAndLoadData();
   }
 
+  bool _isActionInProgress = false;
+  bool _isSyncing = false;
+
   @override
   void dispose() {
     _pollingTimer?.cancel();
@@ -57,13 +60,17 @@ class AdminStore extends ChangeNotifier {
     await _loadLocalData();
     await _fetchRemoteData();
 
-    // Setup periodic polling every 2 seconds for real-time application updates from Railway MongoDB
-    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      _fetchRemoteData();
+    // Background sync polling every 8s (resilient, non-blocking)
+    _pollingTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (!_isActionInProgress) {
+        _fetchRemoteData();
+      }
     });
   }
 
   Future<void> _fetchRemoteData() async {
+    if (_isSyncing) return;
+    _isSyncing = true;
     try {
       final apiApps = await ApiService.getApplications();
       if (apiApps.isNotEmpty) {
@@ -81,7 +88,9 @@ class AdminStore extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('[AdminStore] Railway Backend Fetch Error: $e');
+      debugPrint('[AdminStore] Backend Sync Error: $e');
+    } finally {
+      _isSyncing = false;
     }
   }
 
@@ -225,84 +234,105 @@ class AdminStore extends ChangeNotifier {
     return newId;
   }
 
-  /// Approve Clinic Application via Railway FastAPI MongoDB Backend
+  /// Approve Clinic Application via FastAPI MongoDB Backend
   Future<String> approveApplication(String appId) async {
-    final index = _applications.indexWhere((a) => a.id == appId);
-    if (index == -1) throw Exception('Application not found');
-
-    final app = _applications[index];
-    final generatedClinicId = _generateUniqueClinicId();
-    final generatedRefNum = 'REF-${generatedClinicId.replaceAll('CS-', '')}';
-
-    app.status = ApplicationStatus.approved;
-    app.reviewedAt = DateTime.now();
-    app.assignedClinicId = generatedClinicId;
-
-    final newClinic = Clinic(
-      clinicId: generatedClinicId,
-      clinicRefNum: generatedRefNum,
-      name: app.clinicName,
-      phone: app.clinicPhone,
-      email: app.email,
-      address: app.address,
-      city: app.city,
-      state: app.state,
-      pincode: app.pincode,
-      latitude: app.latitude,
-      longitude: app.longitude,
-      speciality: app.speciality,
-      operatingHours: app.operatingHours,
-      status: ClinicStatus.approved,
-    );
-
-    final newDoctor = Doctor(
-      doctorId: 'DOC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-      clinicId: generatedClinicId,
-      name: app.doctorName,
-      phone: app.doctorPhone,
-      speciality: app.doctorSpeciality,
-      qualification: app.doctorQualification,
-      registrationNumber: app.doctorRegNum,
-      avgConsultationMinutes: app.avgConsultationMinutes,
-      isAvailable: true,
-    );
-
-    _clinics.insert(0, newClinic);
-    _doctors.insert(0, newDoctor);
-
-    // Direct HTTP POST to Railway FastAPI MongoDB Backend
+    _isActionInProgress = true;
     try {
-      await ApiService.approveApplication(appId);
-    } catch (e) {
-      debugPrint('[AdminStore] ApiService Approve Error: $e');
-    }
+      final index = _applications.indexWhere((a) => a.id == appId);
+      if (index == -1) throw Exception('Application not found');
 
-    _logAudit('CLINIC_APPROVED', 'Approved ${app.clinicName}. Generated Clinic ID: $generatedClinicId.');
-    await _saveData();
-    notifyListeners();
-    return generatedClinicId;
+      final app = _applications[index];
+      final generatedClinicId = app.assignedClinicId ?? _generateUniqueClinicId();
+      final generatedRefNum = 'REF-${generatedClinicId.replaceAll('CS-', '')}';
+
+      app.status = ApplicationStatus.approved;
+      app.reviewedAt = DateTime.now();
+      app.assignedClinicId = generatedClinicId;
+
+      final newClinic = Clinic(
+        clinicId: generatedClinicId,
+        clinicRefNum: generatedRefNum,
+        name: app.clinicName,
+        phone: app.clinicPhone,
+        email: app.email,
+        address: app.address,
+        city: app.city,
+        state: app.state,
+        pincode: app.pincode,
+        latitude: app.latitude,
+        longitude: app.longitude,
+        speciality: app.speciality,
+        operatingHours: app.operatingHours,
+        status: ClinicStatus.approved,
+      );
+
+      final newDoctor = Doctor(
+        doctorId: 'DOC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+        clinicId: generatedClinicId,
+        name: app.doctorName,
+        phone: app.doctorPhone,
+        speciality: app.doctorSpeciality,
+        qualification: app.doctorQualification,
+        registrationNumber: app.doctorRegNum,
+        avgConsultationMinutes: app.avgConsultationMinutes,
+        isAvailable: true,
+      );
+
+      if (!_clinics.any((c) => c.clinicId == generatedClinicId)) {
+        _clinics.insert(0, newClinic);
+      }
+      if (!_doctors.any((d) => d.clinicId == generatedClinicId)) {
+        _doctors.insert(0, newDoctor);
+      }
+
+      _logAudit('CLINIC_APPROVED', 'Approved ${app.clinicName}. Generated Clinic ID: $generatedClinicId.');
+      await _saveData();
+      notifyListeners();
+
+      // Direct HTTP POST to FastAPI MongoDB Backend
+      try {
+        await ApiService.approveApplication(appId);
+      } catch (e) {
+        debugPrint('[AdminStore] ApiService Approve Error: $e');
+      }
+
+      // Sync backend state in background
+      _fetchRemoteData();
+
+      return generatedClinicId;
+    } finally {
+      _isActionInProgress = false;
+    }
   }
 
-  /// Reject Application via Railway FastAPI MongoDB Backend
+  /// Reject Application via FastAPI MongoDB Backend
   Future<void> rejectApplication(String appId, String reason) async {
-    final index = _applications.indexWhere((a) => a.id == appId);
-    if (index == -1) return;
-
-    final app = _applications[index];
-    app.status = ApplicationStatus.rejected;
-    app.reviewedAt = DateTime.now();
-    app.rejectionReason = reason;
-
-    // Direct HTTP POST to Railway FastAPI MongoDB Backend
+    _isActionInProgress = true;
     try {
-      await ApiService.rejectApplication(appId, reason);
-    } catch (e) {
-      debugPrint('[AdminStore] ApiService Reject Error: $e');
-    }
+      final index = _applications.indexWhere((a) => a.id == appId);
+      if (index == -1) return;
 
-    _logAudit('CLINIC_REJECTED', 'Rejected application for ${app.clinicName}. Reason: $reason');
-    await _saveData();
-    notifyListeners();
+      final app = _applications[index];
+      app.status = ApplicationStatus.rejected;
+      app.reviewedAt = DateTime.now();
+      app.rejectionReason = reason;
+
+      _logAudit('CLINIC_REJECTED', 'Rejected application for ${app.clinicName}. Reason: $reason');
+      await _saveData();
+      notifyListeners();
+
+      // Direct HTTP POST to FastAPI MongoDB Backend
+      try {
+        await ApiService.rejectApplication(appId, reason);
+      } catch (e) {
+        debugPrint('[AdminStore] ApiService Reject Error: $e');
+      }
+
+      // Sync backend state in background
+      _fetchRemoteData();
+    } finally {
+      _isActionInProgress = false;
+    }
   }
 
   /// Toggle Suspend / Reactivate Clinic Status

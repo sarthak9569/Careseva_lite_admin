@@ -44,16 +44,16 @@ class _ApplicationDetailScreenState extends State<ApplicationDetailScreen> {
               try {
                 final clinicId = await store.approveApplication(widget.application.id);
                 if (mounted) {
-                  setState(() => _isProcessing = false);
                   _showSuccessDialog(clinicId);
                 }
               } catch (e) {
                 if (mounted) {
-                  setState(() => _isProcessing = false);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error approving clinic: $e')),
                   );
                 }
+              } finally {
+                if (mounted) setState(() => _isProcessing = false);
               }
             },
             child: const Text('Approve & Assign ID', style: TextStyle(color: Colors.white)),
@@ -150,10 +150,19 @@ class _ApplicationDetailScreenState extends State<ApplicationDetailScreen> {
               Navigator.pop(ctx);
               setState(() => _isProcessing = true);
               final store = Provider.of<AdminStore>(context, listen: false);
-              await store.rejectApplication(widget.application.id, reason);
-              if (mounted) {
-                setState(() => _isProcessing = false);
-                Navigator.pop(context);
+              try {
+                await store.rejectApplication(widget.application.id, reason);
+                if (mounted) {
+                  Navigator.pop(context);
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error rejecting application: $e')),
+                  );
+                }
+              } finally {
+                if (mounted) setState(() => _isProcessing = false);
               }
             },
             child: const Text('Reject Application', style: TextStyle(color: Colors.white)),

@@ -20,6 +20,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _isProcessing = false;
+  String? _processingAppId;
 
   @override
   void dispose() {
@@ -99,13 +100,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 5. MAIN CONTENT (EMPTY STATE OR LIVE APPLICATION LIST)
-              if (_isProcessing)
+              // 5. MAIN CONTENT (NON-BLOCKING INDICATOR + LIVE APPLICATION LIST)
+              if (_isProcessing && _processingAppId == null)
                 const Padding(
-                  padding: EdgeInsets.all(40.0),
-                  child: Center(child: CircularProgressIndicator(color: AdminTheme.primaryColor)),
-                )
-              else if (currentList.isEmpty)
+                  padding: EdgeInsets.only(bottom: 16.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.all(Radius.circular(4)),
+                    child: LinearProgressIndicator(
+                      color: AdminTheme.primaryColor,
+                      backgroundColor: Color(0xFF1E2638),
+                      minHeight: 4,
+                    ),
+                  ),
+                ),
+              if (currentList.isEmpty)
                 _buildEmptyStateCard()
               else
                 _buildApplicationList(currentList, adminStore),
@@ -710,9 +718,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       ),
-                      onPressed: () => _approveApplicationQuick(context, adminStore, app),
-                      icon: const Icon(Icons.check_rounded, size: 16),
-                      label: const Text('Approve & Assign ID', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      onPressed: (_processingAppId == app.id) ? null : () => _approveApplicationQuick(context, adminStore, app),
+                      icon: (_processingAppId == app.id)
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.check_rounded, size: 16),
+                      label: Text(
+                        (_processingAppId == app.id) ? 'Approving...' : 'Approve & Assign ID',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ],
                 ],
@@ -725,18 +742,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _approveApplicationQuick(BuildContext context, AdminStore adminStore, ClinicApplication app) async {
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _processingAppId = app.id;
+    });
     try {
       final clinicId = await adminStore.approveApplication(app.id);
       if (!context.mounted) return;
-      setState(() => _isProcessing = false);
       _showSuccessDialog(context, clinicId, app.clinicName);
     } catch (e) {
       if (!context.mounted) return;
-      setState(() => _isProcessing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error approving application: $e')),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _processingAppId = null;
+        });
+      }
     }
   }
 
@@ -773,9 +798,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               final reason = reasonController.text.trim();
               if (reason.isEmpty) return;
               Navigator.pop(ctx);
-              setState(() => _isProcessing = true);
-              await adminStore.rejectApplication(app.id, reason);
-              if (mounted) setState(() => _isProcessing = false);
+              setState(() {
+                _isProcessing = true;
+                _processingAppId = app.id;
+              });
+              try {
+                await adminStore.rejectApplication(app.id, reason);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error rejecting application: $e')),
+                  );
+                }
+              } finally {
+                if (mounted) {
+                  setState(() {
+                    _isProcessing = false;
+                    _processingAppId = null;
+                  });
+                }
+              }
             },
             child: const Text('Reject Application', style: TextStyle(color: Colors.white)),
           ),

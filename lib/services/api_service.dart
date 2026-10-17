@@ -4,20 +4,45 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String _cloudBaseUrl = 'https://caresevalitebackend-production.up.railway.app/api';
-  static final String _localBaseUrl = kIsWeb ? 'http://localhost:8000/api' : 'http://10.0.2.2:8000/api';
 
-  // In development / local web, prioritize local backend for instant (2ms) responses
-  static String _activeBaseUrl = (kDebugMode || kIsWeb) ? _localBaseUrl : _cloudBaseUrl;
+  static String _resolveInitialBaseUrl() {
+    if (kIsWeb) {
+      final host = Uri.base.host;
+      if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1') {
+        if (RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(host)) {
+          return 'http://$host:8000/api';
+        }
+        return 'https://$host/api';
+      }
+      return 'http://localhost:8000/api';
+    }
+    return 'http://10.0.2.2:8000/api';
+  }
+
+  // Active Base URL initialized with smart origin detection
+  static String _activeBaseUrl = _resolveInitialBaseUrl();
   static String get baseUrl => _activeBaseUrl;
 
-  static List<String> get _candidateHosts => [
-        _activeBaseUrl,
-        _localBaseUrl,
-        'http://localhost:8000/api',
-        'http://192.168.1.7:8000/api',
-        _cloudBaseUrl,
-        if (!kIsWeb) 'http://10.0.2.2:8000/api',
-      ].toSet().toList();
+  static List<String> get _candidateHosts {
+    final list = <String>[];
+    if (_activeBaseUrl.isNotEmpty) list.add(_activeBaseUrl);
+    if (kIsWeb) {
+      final host = Uri.base.host;
+      if (host.isNotEmpty && host != 'localhost' && host != '127.0.0.1') {
+        list.add('http://$host:8000/api');
+      }
+      list.add('http://localhost:8000/api');
+      list.add('http://127.0.0.1:8000/api');
+      list.add('http://192.168.1.7:8000/api');
+    } else {
+      list.add('http://10.0.2.2:8000/api');
+      list.add('http://192.168.1.7:8000/api');
+      list.add('http://localhost:8000/api');
+    }
+    // Only attempt cloud base URL as final fallback
+    list.add(_cloudBaseUrl);
+    return list.toSet().toList();
+  }
 
   static String get wsBaseUrl {
     if (_activeBaseUrl.contains('railway.app')) {
@@ -25,7 +50,8 @@ class ApiService {
     } else if (_activeBaseUrl.contains('localhost')) {
       return 'ws://localhost:8000';
     } else {
-      return 'ws://192.168.1.7:8000';
+      final host = Uri.tryParse(_activeBaseUrl)?.host ?? '192.168.1.7';
+      return 'ws://$host:8000';
     }
   }
 
@@ -38,11 +64,22 @@ class ApiService {
       };
 
   static Future<http.Response> _get(String path, {Map<String, String>? queryParams}) async {
+    // 1. Instant attempt on known active host
+    try {
+      final uri = Uri.parse('$_activeBaseUrl$path').replace(queryParameters: queryParams);
+      final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 1500));
+      if (res.statusCode < 500) {
+        return res;
+      }
+    } catch (_) {}
+
+    // 2. Candidate host fallbacks
     for (final host in _candidateHosts) {
+      if (host == _activeBaseUrl) continue;
       try {
         final uri = Uri.parse('$host$path').replace(queryParameters: queryParams);
-        final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 2000));
-        if (res.statusCode == 200) {
+        final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 1500));
+        if (res.statusCode < 500) {
           _activeBaseUrl = host;
           return res;
         }
@@ -52,15 +89,32 @@ class ApiService {
   }
 
   static Future<http.Response> _post(String path, {Object? body}) async {
+    final encodedBody = body != null ? jsonEncode(body) : '{}';
+
+    // 1. Instant attempt on known active host
+    try {
+      final uri = Uri.parse('$_activeBaseUrl$path');
+      final res = await http.post(
+        uri,
+        headers: headers,
+        body: encodedBody,
+      ).timeout(const Duration(milliseconds: 2000));
+      if (res.statusCode < 500) {
+        return res;
+      }
+    } catch (_) {}
+
+    // 2. Candidate host fallbacks
     for (final host in _candidateHosts) {
+      if (host == _activeBaseUrl) continue;
       try {
         final uri = Uri.parse('$host$path');
         final res = await http.post(
           uri,
           headers: headers,
-          body: body != null ? jsonEncode(body) : null,
-        ).timeout(const Duration(milliseconds: 2500));
-        if (res.statusCode == 200 || res.statusCode == 201) {
+          body: encodedBody,
+        ).timeout(const Duration(milliseconds: 2000));
+        if (res.statusCode < 500) {
           _activeBaseUrl = host;
           return res;
         }
@@ -275,15 +329,23 @@ class ApiService {
   }
 
   static Future<bool> updateTokenStatus(String tokenId, String status) async {
+    final encodedBody = jsonEncode({'status': status});
+    try {
+      final uri = Uri.parse('$_activeBaseUrl/queues/token/$tokenId/status');
+      final res = await http.patch(uri, headers: headers, body: encodedBody).timeout(const Duration(milliseconds: 2000));
+      if (res.statusCode < 500) return true;
+    } catch (_) {}
+
     try {
       for (final host in _candidateHosts) {
+        if (host == _activeBaseUrl) continue;
         try {
           final res = await http.patch(
             Uri.parse('$host/queues/token/$tokenId/status'),
             headers: headers,
-            body: jsonEncode({'status': status}),
+            body: encodedBody,
           ).timeout(const Duration(milliseconds: 2000));
-          if (res.statusCode == 200) {
+          if (res.statusCode < 500) {
             _activeBaseUrl = host;
             return true;
           }
