@@ -6,16 +6,18 @@ class ApiService {
   static const String _cloudBaseUrl = 'https://caresevalitebackend-production.up.railway.app/api';
   static final String _localBaseUrl = kIsWeb ? 'http://localhost:8000/api' : 'http://10.0.2.2:8000/api';
 
-  static String _activeBaseUrl = _cloudBaseUrl;
+  // In development / local web, prioritize local backend for instant (2ms) responses
+  static String _activeBaseUrl = (kDebugMode || kIsWeb) ? _localBaseUrl : _cloudBaseUrl;
   static String get baseUrl => _activeBaseUrl;
 
   static List<String> get _candidateHosts => [
         _activeBaseUrl,
-        if (_activeBaseUrl != _localBaseUrl) _localBaseUrl,
-        if (_activeBaseUrl != _cloudBaseUrl) _cloudBaseUrl,
+        _localBaseUrl,
+        'http://localhost:8000/api',
         'http://192.168.1.7:8000/api',
+        _cloudBaseUrl,
         if (!kIsWeb) 'http://10.0.2.2:8000/api',
-      ];
+      ].toSet().toList();
 
   static String get wsBaseUrl {
     if (_activeBaseUrl.contains('railway.app')) {
@@ -39,7 +41,7 @@ class ApiService {
     for (final host in _candidateHosts) {
       try {
         final uri = Uri.parse('$host$path').replace(queryParameters: queryParams);
-        final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+        final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 2000));
         if (res.statusCode == 200) {
           _activeBaseUrl = host;
           return res;
@@ -57,7 +59,7 @@ class ApiService {
           uri,
           headers: headers,
           body: body != null ? jsonEncode(body) : null,
-        ).timeout(const Duration(seconds: 5));
+        ).timeout(const Duration(milliseconds: 2500));
         if (res.statusCode == 200 || res.statusCode == 201) {
           _activeBaseUrl = host;
           return res;
@@ -280,7 +282,7 @@ class ApiService {
             Uri.parse('$host/queues/token/$tokenId/status'),
             headers: headers,
             body: jsonEncode({'status': status}),
-          ).timeout(const Duration(seconds: 4));
+          ).timeout(const Duration(milliseconds: 2000));
           if (res.statusCode == 200) {
             _activeBaseUrl = host;
             return true;
